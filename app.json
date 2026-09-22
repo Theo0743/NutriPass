@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "NutriPass",
+    "slug": "NutriPass",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "nutripass",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#05070F",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nutripass.app"
+    },
+    "android": {
+      "package": "com.nutripass.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#05070F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store"
+    ]
+  }
+}
