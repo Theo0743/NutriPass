@@ -1,0 +1,18 @@
+# Interdit l'accès direct à config.php par le navigateur.
+# Sans cette règle, une erreur de configuration PHP pourrait servir le
+# fichier en texte brut, avec le mot de passe de la base dedans.
+<Files "config.php">
+    Require all denied
+</Files>
+
+<Files "config.example.php">
+    Require all denied
+</Files>
+
+<Files "mapping.php">
+    Require all denied
+</Files>
+
+<Files "db.php">
+    Require all denied
+</Files>
