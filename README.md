@@ -68,7 +68,7 @@ Modifier :
 export const API_BASE_URL = 'https://VOTRE-DOMAINE';
 export const API_KEY = 'VOTRE_CLE_API';
 ```
-## 3. Installer la base de données
+## 3. Installer la base de données
 
 Importer le fichier :
 
