@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "exclude": ["projet2"]
+  "exclude": ["projet2", "node_modules", "dist"]
 }

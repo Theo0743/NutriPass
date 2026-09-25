@@ -33,9 +33,12 @@ import {
 
 import { arcade, font, size, space } from '../constants/figmaTheme';
 import { claimAllMeals, fetchMeals } from '../services/mealsApi';
+import { listenForBadges } from '../services/nfcReader';
 import { computeRequirements } from '../services/nutritionEngine';
 import type { ClaimPayload, MenuCategory, MenuItem } from '../types/meal';
 import type { UserProfile } from '../types/user';
+import { CodeScreen } from './CodeScreen';
+import { ScrollArrows, useScrollArrows } from './ScrollArrows';
 
 const KCAL_STEP_LABELS = ['Minimum', 'Recommandé'] as const;
 
@@ -115,19 +118,27 @@ function sortMenu(items: MenuItem[], allergies: string[]): MenuItem[] {
   });
 }
 
-type Screen = 'waiting' | 'menu' | 'slider' | 'recap' | 'confirmed';
+type Screen = 'waiting' | 'code' | 'menu' | 'slider' | 'recap' | 'confirmed';
 
 type Props = {
   onOpenProfile: () => void;
   profile: UserProfile | null;
+  /** Code correct : l'application charge le profil de cet astronaute. */
+  onAuthenticated: (astronauteId: string) => void;
+  /** Commande terminée : la personne est déconnectée. */
+  onLogout: () => void;
 };
 
 export function MealScreen({
   onOpenProfile,
   profile,
+  onAuthenticated,
+  onLogout,
 }: Props): React.ReactElement {
   const insets = useSafeAreaInsets();
   const [screen, setScreen] = useState<Screen>('waiting');
+  /** Identifiant lu sur la carte, jusqu'à la déconnexion. */
+  const [badgeId, setBadgeId] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [selectedRepas, setSelectedRepas] = useState<MenuItem | null>(null);
   const [selectedSnack, setSelectedSnack] = useState<MenuItem | null>(null);
@@ -154,6 +165,7 @@ export function MealScreen({
   const dot2Anim = useRef(new Animated.Value(0)).current;
   const dot3Anim = useRef(new Animated.Value(0)).current;
   const profileScale = useRef(new Animated.Value(1)).current;
+  const menuScroll = useScrollArrows();
 
   useEffect(() => {
     screenFade.setValue(0);
@@ -261,6 +273,16 @@ export function MealScreen({
     }).start();
   }, [sliderValue, kcalPopAnim]);
 
+  // Écran d'attente : on écoute le lecteur NFC. Une carte détectée ouvre
+  // l'écran du code pour l'identifiant lu.
+  useEffect(() => {
+    if (screen !== 'waiting') return undefined;
+    return listenForBadges((scan) => {
+      setBadgeId(scan.id);
+      setScreen('code');
+    });
+  }, [screen]);
+
   const resetSelections = useCallback(() => {
     setSelectedRepas(null);
     setSelectedSnack(null);
@@ -348,7 +370,9 @@ export function MealScreen({
       const stepIdx = Math.round(sliderValue) - 1;
       const mealType = kcalSteps[stepIdx].label.toLowerCase();
       const portionSize = Math.round(sliderValue);
-      const astronauteId = profile?.profileId;
+      // Le profil se charge juste après le code : si la commande part avant
+      // qu'il soit arrivé, on utilise l'identifiant lu sur la carte.
+      const astronauteId = profile?.profileId ?? badgeId ?? undefined;
 
       const claims: ClaimPayload[] = [];
       const repasKcal = kcalSteps[stepIdx].kcal;
@@ -413,6 +437,9 @@ export function MealScreen({
       ]).start();
       setTimeout(() => {
         resetSelections();
+        // Déconnexion : la personne suivante doit scanner son propre pass.
+        setBadgeId(null);
+        onLogout();
         setScreen('waiting');
       }, 3000);
     } catch (e) {
@@ -429,6 +456,8 @@ export function MealScreen({
     sliderValue,
     isClaiming,
     profile,
+    badgeId,
+    onLogout,
     kcalSteps,
     fadeAnim,
     scaleAnim,
@@ -456,7 +485,26 @@ export function MealScreen({
   const filteredMenu = menu.filter((m) => m.categorie === STEPS[stepIndex].key);
   const sortedMenu = sortMenu(filteredMenu, allergies);
 
+  // --- ÉCRAN DU CODE ---
+  if (screen === 'code' && badgeId) {
+    return (
+      <CodeScreen
+        astronauteId={badgeId}
+        onSuccess={() => {
+          onAuthenticated(badgeId);
+          resetSelections();
+          setScreen('menu');
+        }}
+        onCancel={() => {
+          setBadgeId(null);
+          setScreen('waiting');
+        }}
+      />
+    );
+  }
+
   // --- ÉCRAN D'ATTENTE ---
+  // Seul le passage d'une carte permet d'avancer (voir listenForBadges).
   if (screen === 'waiting') {
     const scanTranslateY = scanAnim.interpolate({
       inputRange: [0, 1],
@@ -464,13 +512,7 @@ export function MealScreen({
     });
 
     return (
-      <Pressable
-        style={styles.screen}
-        onPress={() => {
-          resetSelections();
-          setScreen('menu');
-        }}
-      >
+      <View style={styles.screen}>
         <View style={[styles.waitingCard, { paddingBottom: insets.bottom + 40 }]}>
           <View style={styles.scanHaloWrap}>
             <Animated.View
@@ -490,10 +532,10 @@ export function MealScreen({
             <Animated.Text style={{ opacity: dot3Anim }}>.</Animated.Text>
           </Text>
           <Text style={styles.waitingHint}>
-            Touchez l'écran pour revenir au menu
+            Approchez votre carte du lecteur
           </Text>
         </View>
-      </Pressable>
+      </View>
     );
   }
 
@@ -963,6 +1005,7 @@ export function MealScreen({
         </View>
       ) : (
         <Animated.ScrollView
+          {...menuScroll.scrollProps}
           style={[styles.menuGrid, { opacity: screenFade }]}
           contentContainerStyle={[
             styles.menuGridContent,
@@ -988,6 +1031,8 @@ export function MealScreen({
           </View>
         </Animated.ScrollView>
       )}
+      
+      <ScrollArrows scroll={menuScroll} />
 
       {stepIndex > 0 ? (
         <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>

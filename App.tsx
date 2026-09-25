@@ -11,7 +11,7 @@ import { Orbitron_700Bold } from '@expo-google-fonts/orbitron';
 import { ShareTechMono_400Regular } from '@expo-google-fonts/share-tech-mono';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -37,9 +37,18 @@ export default function App(): React.ReactElement {
   );
 }
 
+/** Sans toucher l'écran pendant ce délai, la personne connectée est déconnectée. */
+const INACTIVITY_LOGOUT_MS = 2 * 60 * 1000;
+
 function Root(): React.ReactElement {
+  // null : personne n'est connecté, la borne attend un pass.
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Changer cette clé remonte MealScreen, qui repart sur « Scannez votre pass ».
+  const [sessionKey, setSessionKey] = useState(0);
+  // Incrémenté à chaque déconnexion : un profil qui arrive après coup est ignoré.
+  const sessionRef = useRef(0);
+  const lastActivity = useRef(Date.now());
 
   const [fontsLoaded] = useFonts({
     Orbitron_700Bold,
@@ -48,26 +57,48 @@ function Root(): React.ReactElement {
     Exo2_500Medium,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
+  // Code correct : on charge le profil de la personne qui a scanné son pass.
+  const handleAuthenticated = useCallback((astronauteId: string) => {
+    const session = sessionRef.current;
+    lastActivity.current = Date.now();
     void (async () => {
-      const result = await loadCrewMember();
-
-      if (!cancelled) {
+      const result = await loadCrewMember(astronauteId);
+      if (sessionRef.current === session) {
         setProfile(result.profile);
       }
     })();
+  }, []);
 
-    return () => {
-      cancelled = true;
-    };
+  const handleLogout = useCallback(() => {
+    sessionRef.current += 1;
+    setProfile(null);
+    setPanelOpen(false);
+  }, []);
+
+  // Déconnexion automatique si la personne part sans commander.
+  useEffect(() => {
+    if (!profile) return undefined;
+    lastActivity.current = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity.current > INACTIVITY_LOGOUT_MS) {
+        handleLogout();
+        setSessionKey((k) => k + 1);
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [profile, handleLogout]);
+
+  // Chaque contact avec l'écran (doigt ou souris) repousse la déconnexion.
+  // Renvoyer false laisse le contact au composant touché.
+  const markActivity = useCallback(() => {
+    lastActivity.current = Date.now();
+    return false;
   }, []);
 
   const openPanel = useCallback(() => setPanelOpen(true), []);
   const closePanel = useCallback(() => setPanelOpen(false), []);
 
-  if (!fontsLoaded || !profile) {
+  if (!fontsLoaded) {
     return (
       <View style={[styles.screen, styles.centered]}>
         <ActivityIndicator color={arcade.blue} />
@@ -76,14 +107,25 @@ function Root(): React.ReactElement {
   }
 
   return (
-    <View style={styles.screen}>
-      <MealScreen onOpenProfile={openPanel} profile={profile} />
-
-      <ProfilePanel
-        visible={panelOpen}
+    <View
+      style={styles.screen}
+      onStartShouldSetResponderCapture={markActivity}
+    >
+      <MealScreen
+        key={sessionKey}
+        onOpenProfile={openPanel}
         profile={profile}
-        onClose={closePanel}
+        onAuthenticated={handleAuthenticated}
+        onLogout={handleLogout}
       />
+
+      {profile ? (
+        <ProfilePanel
+          visible={panelOpen}
+          profile={profile}
+          onClose={closePanel}
+        />
+      ) : null}
     </View>
   );
 }
